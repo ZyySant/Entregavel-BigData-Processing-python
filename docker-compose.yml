@@ -1,0 +1,150 @@
+# ShopBrasil Pipeline -- Docker Compose de producao
+#
+# Sobe o cluster Spark (master + worker) e o Airflow completo (init +
+# webserver + scheduler). DAG, spark_jobs, quality e data entram como volume.
+#
+# Uso:
+#   docker compose up -d
+#   docker compose down -v
+#
+# Spark Master: http://localhost:8080
+# Airflow:      http://localhost:8081
+#
+# Requisitos minimos: 8GB RAM, 4 cores.
+
+services:
+  spark-master:
+    image: apache/spark:3.5.3
+    container_name: shopbrasil-spark-master
+    command:
+      - /opt/spark/bin/spark-class
+      - org.apache.spark.deploy.master.Master
+      - --host
+      - spark-master
+      - --port
+      - "7077"
+      - --webui-port
+      - "8080"
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    volumes:
+      - ./spark_jobs:/opt/spark-jobs
+      - ./quality:/opt/quality
+      - ./data:/opt/airflow/data
+    networks:
+      - shopbrasil-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+
+  spark-worker:
+    image: apache/spark:3.5.3
+    container_name: shopbrasil-spark-worker
+    depends_on:
+      spark-master:
+        condition: service_healthy
+    command:
+      - /opt/spark/bin/spark-class
+      - org.apache.spark.deploy.worker.Worker
+      - spark://spark-master:7077
+      - --cores
+      - "2"
+      - --memory
+      - 2g
+    volumes:
+      - ./spark_jobs:/opt/spark-jobs
+      - ./quality:/opt/quality
+      - ./data:/opt/airflow/data
+    networks:
+      - shopbrasil-net
+    restart: unless-stopped
+
+  airflow-init:
+    build:
+      context: .
+      dockerfile: docker/airflow.Dockerfile
+    container_name: shopbrasil-airflow-init
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
+    entrypoint: /bin/bash
+    command: ["/opt/airflow/scripts/init.sh"]
+    volumes:
+      - airflow-data:/opt/airflow
+      - ./dags:/opt/airflow/dags
+      - ./data:/opt/airflow/data
+      - ./scripts/airflow_init.sh:/opt/airflow/scripts/init.sh
+    networks:
+      - shopbrasil-net
+
+  airflow-webserver:
+    build:
+      context: .
+      dockerfile: docker/airflow.Dockerfile
+    container_name: shopbrasil-airflow-webserver
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
+      - AIRFLOW__WEBSERVER__WEB_SERVER_PORT=8080
+    ports:
+      - "8081:8080"
+    volumes:
+      - airflow-data:/opt/airflow
+      - ./dags:/opt/airflow/dags
+      - ./data:/opt/airflow/data
+      - ./spark_jobs:/opt/spark-jobs
+      - ./quality:/opt/quality
+    command: airflow webserver
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+    networks:
+      - shopbrasil-net
+
+  airflow-scheduler:
+    build:
+      context: .
+      dockerfile: docker/airflow.Dockerfile
+    container_name: shopbrasil-airflow-scheduler
+    depends_on:
+      airflow-webserver:
+        condition: service_healthy
+      spark-master:
+        condition: service_healthy
+    environment:
+      - AIRFLOW__CORE__EXECUTOR=SequentialExecutor
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=sqlite:////opt/airflow/airflow.db
+    volumes:
+      - airflow-data:/opt/airflow
+      - ./dags:/opt/airflow/dags
+      - ./data:/opt/airflow/data
+      - ./spark_jobs:/opt/spark-jobs
+      - ./quality:/opt/quality
+    command: airflow scheduler
+    restart: unless-stopped
+    networks:
+      - shopbrasil-net
+
+volumes:
+  airflow-data:
+    driver: local
+
+networks:
+  shopbrasil-net:
+    driver: bridge
+    name: shopbrasil-net

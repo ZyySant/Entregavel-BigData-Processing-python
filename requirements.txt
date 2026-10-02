@@ -1,0 +1,6 @@
+# Dependencias pra rodar os spark_jobs fora do Docker (dev local / testes rapidos).
+# Dentro do container, o bitnami/spark:3.5 ja vem com PySpark instalado.
+pyspark==3.5.3
+pandas==2.2.1
+pyarrow==15.0.2
+pytest==8.1.1

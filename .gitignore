@@ -1,0 +1,20 @@
+# Saida do pipeline (gerada em runtime, nao precisa ir pro git)
+data/datalake/
+data/quality_reports/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+venv/
+.venv/
+
+# Airflow
+*.db
+logs/
+
+# SO / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

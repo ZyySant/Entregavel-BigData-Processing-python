@@ -6,14 +6,6 @@ DataFlow Analytics, a empresa usada como narrativa do curso): ingestão
 multi-formato, arquitetura Medallion (Bronze/Silver/Gold), qualidade de dados
 customizada com quarentena, e orquestração via Airflow — tudo containerizado.
 
-## Integrantes
-
-| Nome | RA |
-|---|---|
-| | |
-| | |
-| | |
-
 ## Como rodar
 
 ### Pré-requisitos
